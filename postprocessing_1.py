@@ -33,8 +33,8 @@ def process_lane_lines(image):
     
     centerlines = []
     for contour in contours:
-        # Skip small contours
-        if cv2.contourArea(contour) < 100:
+        # Skip small contours - increased threshold to filter out very small lanes
+        if cv2.contourArea(contour) < 500:  # Increased from 100 to 500 for bigger lanes only
             continue
             
         # Create a mask for this specific lane
@@ -114,13 +114,19 @@ def process_drivable_area(image):
     # Combine masks
     drivable_mask = cv2.bitwise_or(green_mask, orange_mask)
     
-    # NO smoothing - keep the raw mask to preserve accurate boundaries
-    # Apply minimal morphological operations only to remove noise
-    kernel = np.ones((2,2), np.uint8)
+    # Apply smoothing morphological operations for better polygon quality
+    kernel = np.ones((5,5), np.uint8)  # Larger kernel for more smoothing
     drivable_mask = cv2.morphologyEx(drivable_mask, cv2.MORPH_CLOSE, kernel)
+    drivable_mask = cv2.morphologyEx(drivable_mask, cv2.MORPH_OPEN, kernel)
+    
+    # Additional Gaussian blur for smoother boundaries
+    drivable_mask = cv2.GaussianBlur(drivable_mask, (7, 7), 0)
+    
+    # Re-threshold after blurring to get clean binary mask
+    _, drivable_mask = cv2.threshold(drivable_mask, 127, 255, cv2.THRESH_BINARY)
     
     # Find contours with detailed approximation to preserve curves and breakages
-    contours, _ = cv2.findContours(drivable_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+    contours, _ = cv2.findContours(drivable_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     
     boundaries = []
     for contour in contours:
@@ -128,9 +134,9 @@ def process_drivable_area(image):
         if cv2.contourArea(contour) < 1000:
             continue
             
-        # Use minimal approximation to preserve the accurate shape
-        # Reduce epsilon significantly to maintain more detail
-        epsilon = 0.001 * cv2.arcLength(contour, True)  # Much smaller epsilon for accuracy
+        # Use better approximation for smoother polygons
+        # Increase epsilon for more smoothing and fewer vertices
+        epsilon = 0.005 * cv2.arcLength(contour, True)  # Increased epsilon for smoother polygons
         polygon = cv2.approxPolyDP(contour, epsilon, True)
         boundaries.append(polygon)
     

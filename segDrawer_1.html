@@ -392,6 +392,10 @@
             4. Click "Process Images" to generate the combined result
           </p>
         </div>
+        <div style="display: none;">
+          <input type="file" id="lane-image-input" accept="image/*" />
+          <input type="file" id="drivable-image-input" accept="image/*" />
+        </div>
         <button class="postprocess-button" id="process-images-button" disabled>
           Process Images
         </button>
@@ -503,6 +507,7 @@
         replacementColor = labelColors[selectedLabel];
         console.log('Selected label:', selectedLabel);
         console.log('Replacement color updated to:', replacementColor);
+        updateProcessButton(); // Update button when label changes
     });
     const alpha_255 = 191.25;
     const alpha_1 = 1; // for manual drawer (avoid color overlay artifact when = 0.75)
@@ -865,6 +870,7 @@
           color: {...replacementColor}, // Store the color
           label: currentLabel // Store the label
         });
+        updateProcessButton(); // Update process button when annotation is created
       } 
       else if (masktype == "magic") {
         let pixels = [];
@@ -935,6 +941,7 @@
             // Draw all segments on the canvas, including the new one
             drawnPaths.push({ points: pixels, type: "magic", color: {...replacementColor}, label: currentLabel });
             oriDrawnPaths.push({ points: pixels, type: "magic", color: {...replacementColor}, label: currentLabel });
+            updateProcessButton(); // Update post-processing button state
             redrawPaths(canvas, drawnPaths);
             drawPromptPointOnClick(promptPoints[0], canvas);
             window.currentMagicSegment = pixels;
@@ -1088,6 +1095,7 @@
               color: {...replacementColor},
               label: currentLabel
           });
+          updateProcessButton(); // Update process button when annotation is created
           redrawPaths(maskcanvas, oriDrawnPaths);
 
           const formData = new FormData();
@@ -1369,6 +1377,7 @@
           points: [],
           lineWidth: brushSize / scaleFactor,
         });
+        updateProcessButton(); // Update process button when annotation is created
       } else if (isDrawingRect) {
         rectStartX = event.offsetX;
         rectStartY = event.offsetY;
@@ -1413,6 +1422,7 @@ canvas.addEventListener('mouseup', (event) => {
                 // Draw all segments on the canvas, including the new one
                 drawnPaths.push({ points: pixels, type: "rect", color: {...replacementColor}, label: currentLabel });
                 oriDrawnPaths.push({ points: pixels, type: "rect", color: {...replacementColor}, label: currentLabel });
+                updateProcessButton(); // Update post-processing button state
                 redrawPaths(canvas, drawnPaths);
                 window.currentRectSegment = pixels;
                 markAnnotationUnsaved();
@@ -1867,8 +1877,11 @@ canvas.addEventListener('mouseup', (event) => {
 
     // Toggle postprocessing panel
     postprocessToggle.addEventListener('click', () => {
-      const isVisible = postprocessingPanel.style.display === 'block';
+      const computedStyle = window.getComputedStyle(postprocessingPanel);
+      const isVisible = computedStyle.display !== 'none';
       postprocessingPanel.style.display = isVisible ? 'none' : 'block';
+      
+      console.log('Panel toggle clicked, now visible:', !isVisible);
       
       // Stop all other tools when opening postprocessing
       if (!isVisible) {
@@ -1899,19 +1912,43 @@ canvas.addEventListener('mouseup', (event) => {
 
     // Update process button state
     function updateProcessButton() {
+      if (!processImagesButton) {
+        console.error('updateProcessButton called but processImagesButton is null');
+        return;
+      }
+      
       const laneAnnotations = oriDrawnPaths.filter(path => path.label === 'lanes');
       const drivableAnnotations = oriDrawnPaths.filter(path => path.label === 'drivableArea');
       const hasAnnotations = laneAnnotations.length > 0 || drivableAnnotations.length > 0;
       const hasImage = originalUnresizedImageData !== undefined;
       
-      processImagesButton.disabled = !(hasAnnotations && hasImage);
+      const shouldEnable = hasAnnotations && hasImage;
+      processImagesButton.disabled = !shouldEnable;
+      
+      console.log('Process button updated:', {
+        laneAnnotations: laneAnnotations.length,
+        drivableAnnotations: drivableAnnotations.length,
+        hasImage,
+        shouldEnable,
+        buttonDisabled: processImagesButton.disabled
+      });
     }
 
     // Process images using current annotations
     processImagesButton.addEventListener('click', async () => {
+      console.log('=== PROCESS BUTTON CLICKED ===');
+      console.log('Button disabled:', processImagesButton.disabled);
+      
       // Check if there are annotations for both lanes and drivable areas
       const laneAnnotations = oriDrawnPaths.filter(path => path.label === 'lanes');
       const drivableAnnotations = oriDrawnPaths.filter(path => path.label === 'drivableArea');
+
+      console.log('Found annotations:', {
+        lanes: laneAnnotations.length,
+        drivable: drivableAnnotations.length,
+        total: oriDrawnPaths.length,
+        allPaths: oriDrawnPaths.map(p => ({ type: p.type, label: p.label }))
+      });
 
       if (laneAnnotations.length === 0 && drivableAnnotations.length === 0) {
         alert('Please create some annotations first. Use the magic tool or brush to annotate lanes and drivable areas.');
@@ -1932,6 +1969,10 @@ canvas.addEventListener('mouseup', (event) => {
         laneCanvas.width = originalUnresizedImageData.width;
         laneCanvas.height = originalUnresizedImageData.height;
         const laneCtx = laneCanvas.getContext('2d');
+        
+        // Fill with black background first
+        laneCtx.fillStyle = 'black';
+        laneCtx.fillRect(0, 0, laneCanvas.width, laneCanvas.height);
         
         // Draw lane annotations
         for (const path of laneAnnotations) {
@@ -1963,6 +2004,10 @@ canvas.addEventListener('mouseup', (event) => {
         drivableCanvas.width = originalUnresizedImageData.width;
         drivableCanvas.height = originalUnresizedImageData.height;
         const drivableCtx = drivableCanvas.getContext('2d');
+        
+        // Fill with black background first
+        drivableCtx.fillStyle = 'black';
+        drivableCtx.fillRect(0, 0, drivableCanvas.width, drivableCanvas.height);
         
         // Draw drivable area annotations
         for (const path of drivableAnnotations) {
